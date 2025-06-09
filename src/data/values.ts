@@ -1,0 +1,28 @@
+import type { Value } from '../types/types';
+
+export const ALL_VALUES: Value[] = [
+  { id: 'value-accomplishment', name: 'Accomplishment', definition: 'To achieve a goal or desired outcome through effort.' },
+  { id: 'value-adventure', name: 'Adventure', definition: 'To have new, exciting, and daring experiences.' },
+  { id: 'value-authenticity', name: 'Authenticity', definition: 'To be true to your own personality, values, and spirit.' },
+  { id: 'value-balance', name: 'Balance', definition: 'To have a harmonious arrangement of different elements in your life.' },
+  { id: 'value-community', name: 'Community', definition: 'To feel a sense of belonging and connection with others.' },
+  { id: 'value-compassion', name: 'Compassion', definition: 'To show kindness, caring, and a willingness to help others.' },
+  { id: 'value-creativity', name: 'Creativity', definition: 'To use imagination and original ideas to create something.' },
+  { id: 'value-curiosity', name: 'Curiosity', definition: 'A strong desire to know or learn something new.' },
+  { id: 'value-family', name: 'Family', definition: 'To have strong, supportive relationships with relatives.' },
+  { id: 'value-freedom', name: 'Freedom', definition: 'The power or right to act, speak, or think as one wants.' },
+  { id: 'value-friendship', name: 'Friendship', definition: 'To have close, trusting, and supportive companions.' },
+  { id: 'value-growth', name: 'Growth', definition: 'To continuously learn, improve, and develop as a person.' },
+  { id: 'value-health', name: 'Health', definition: 'To maintain physical and mental well-being.' },
+  { id: 'value-honesty', name: 'Honesty', definition: 'To be truthful, sincere, and free of deceit.' },
+  { id: 'value-humor', name: 'Humor', definition: 'To find lightness and laughter in life.' },
+  { id: 'value-integrity', name: 'Integrity', definition: 'To be honest and have strong moral principles.' },
+  { id: 'value-knowledge', name: 'Knowledge', definition: 'To acquire wisdom, information, and understanding.' },
+  { id: 'value-leadership', name: 'Leadership', definition: 'To guide, inspire, or direct a group or organization.' },
+  { id: 'value-loyalty', name: 'Loyalty', definition: 'To have a strong feeling of support or allegiance.' },
+  { id: 'value-order', name: 'Order', definition: 'To have a neat, organized, and predictable environment.' },
+  { id: 'value-power', name: 'Power', definition: 'To have control, influence, or authority over others.' },
+  { id: 'value-security', name: 'Security', definition: 'To feel safe, stable, and free from danger or threat.' },
+  { id: 'value-spirituality', name: 'Spirituality', definition: 'To have a connection to something larger than oneself.' },
+  { id: 'value-wealth', name: 'Wealth', definition: 'To have an abundance of valuable possessions or money.' },
+];
