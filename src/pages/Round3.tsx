@@ -1,61 +1,279 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import type { FC } from 'react';
 import styled from 'styled-components';
-import { DndContext, DragOverlay, useDraggable, useDroppable, pointerWithin } from '@dnd-kit/core';
+import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
-import Draggable from 'react-draggable';
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useGame } from '../context/GameContext';
 import type { Value, CanvasCard } from '../types/types';
+
+// Import Components
 import { PageLayout } from '../components/PageLayout';
+import { AppHeader } from '../components/AppHeader';
 import { InstructionsPanel } from '../components/InstructionsPanel';
 import { Button } from '../components/Button';
 import { ValueCard } from '../components/ValueCard';
-import { AppHeader } from '../components/AppHeader'; // Import the new header
+import { FreeCanvas } from '../components/FreeCanvas';
 
-// ... (rest of the styled-components and helper components for Round 3 remain the same)
-const Round3Layout = styled.div` display: flex; gap: 24px; height: 70vh; `;
-const Sidebar = styled.div` width: 300px; display: flex; flex-direction: column; gap: 24px; `;
-const ValueListContainer = styled.div<{ isOver: boolean }>` flex: 1; display: flex; flex-direction: column; background-color: ${({ isOver }) => isOver ? '#E6F7FF' : '#F8F9FA'}; border: 1px solid #dee2e6; border-radius: 8px; `;
-const ListTitle = styled.h3` font-weight: 600; padding: 16px; margin: 0; border-bottom: 1px solid #dee2e6; `;
-const CardList = styled.div` padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; `;
-const CanvasArea = styled.div<{ isOver: boolean }>` flex-grow: 1; position: relative; background-color: ${({ isOver }) => isOver ? '#f0f8ff' : '#FFFFFF'}; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; `;
-const ResizableCardWrapper = styled.div` position: absolute; z-index: 10; `;
-const ResizeHandle = styled.div` position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; cursor: se-resize; background: rgba(0, 0, 0, 0.1); border-top: 2px solid rgba(0,0,0,0.4); border-left: 2px solid rgba(0,0,0,0.4); `;
-const ResizableDraggableCanvasCard = ({ card }: { card: CanvasCard }) => { const { dispatch } = useGame(); const [size, setSize] = useState(card.size); return ( <Draggable position={card.position} onStop={(_, data) => dispatch({ type: 'UPDATE_CANVAS_POSITION_R3', payload: { instanceId: card.instanceId, position: { x: data.x, y: data.y } } })} handle=".drag-handle"> <ResizableCardWrapper style={{ width: size.width, height: size.height, left: card.position.x, top: card.position.y }}> <div className="drag-handle" style={{ width: '100%', height: '100%' }}> <ValueCard value={card.value} color={card.isCore ? '#FFFFFF' : '#E6F7FF'} /> </div> <Draggable onDrag={(_, data) => setSize({ width: Math.max(150, size.width + data.deltaX), height: Math.max(100, size.height + data.deltaY) })} onStop={() => dispatch({ type: 'UPDATE_CANVAS_SIZE_R3', payload: { instanceId: card.instanceId, size } })}> <ResizeHandle /> </Draggable> </ResizableCardWrapper> </Draggable> ); };
-const DraggableSidebarCard = ({ value, listType, index }: { value: Value, listType: 'core' | 'additional', index: number }) => { const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${listType}-${index}`, data: { current: { value, isCore: listType === 'core' } } }); return <div ref={setNodeRef} {...listeners} {...attributes}><ValueCard value={value} isDragging={isDragging} color={listType === 'core' ? '#FFFFFF' : '#E6F7FF'} /></div>; };
+// --- Type Definitions ---
+type DraggableItemData =
+  | { type: 'core'; value: Value; index: number }
+  | { type: 'additional'; value: Value; index: number }
+  | { type: 'canvas'; value: Value; card: CanvasCard };
 
-export const Round3 = () => {
+
+// --- Styled Components ---
+const Round3Layout = styled.div`
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  height: 85vh;
+  margin-top: 16px;
+`;
+
+const Sidebar = styled.div`
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid #dee2e6;
+`;
+
+const ValueListContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: #FFFFFF;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+`;
+
+const ValueList = styled.div<{ $isOver: boolean }>`
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background-color: ${({ $isOver }) => ($isOver ? '#d4edda' : 'transparent')};
+  transition: background-color 0.2s ease-in-out;
+  overflow-y: auto;
+`;
+
+const ListTitle = styled.h3`
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 20px;
+  padding: 8px 8px 0;
+  margin: 0;
+`;
+
+const CanvasWrapper = styled.div`
+  flex-grow: 1;
+  position: relative;
+  border-radius: 8px;
+  min-width: 0;
+  border: 1px solid #dee2e6;
+`;
+
+// --- Draggable Components ---
+
+const DraggableBankItem: FC<{ item: Value; listType: 'core' | 'additional'; index: number }> = ({ item, listType, index }) => {
+    const draggableId = `${listType}-item-${item.id}`;
+    const droppableId = draggableId;
+
+    const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
+        id: draggableId,
+        data: { type: listType, value: item, index } as DraggableItemData,
+    });
+
+    const { setNodeRef: setDroppableRef } = useDroppable({
+        id: droppableId,
+        data: { type: listType, index },
+    });
+
+    const setNodeRef = (node: HTMLElement | null) => {
+        setDraggableRef(node);
+        setDroppableRef(node);
+    };
+
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className="dnd-draggable" style={{ opacity: isDragging ? 0.5 : 1 }}>
+            {/* FIX: Swapped the colors */}
+            <ValueCard value={item} isDragging={isDragging} color={listType === 'core' ? '#FFF3CD' : '#FFFFFF'} />
+        </div>
+    );
+};
+
+const DraggableCanvasItem: FC<{ card: CanvasCard }> = ({ card }) => {
+    const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
+        id: card.instanceId,
+        data: { type: 'canvas', value: card.value, card } as DraggableItemData,
+    });
+
+    const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 1000 } : {};
+
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className="dnd-draggable" style={style}>
+            <div style={{ width: card.size.width, height: card.size.height, opacity: isDragging ? 0 : 1 }}>
+                {/* FIX: Swapped the colors */}
+                <ValueCard value={card.value} isDragging={isDragging} color={card.isCore ? '#FFF3CD' : '#FFFFFF'} />
+            </div>
+        </div>
+    );
+};
+
+// --- Main Page Component ---
+
+export const Round3: FC = () => {
     const { state, dispatch } = useGame();
     const { coreValues, additionalValues, mappedCanvas } = state.round3;
-    const [activeValue, setActiveValue] = useState<Value | null>(null);
-    const { setNodeRef: canvasRef, isOver: isOverCanvas } = useDroppable({ id: 'canvas-r3' });
+    const [activeItem, setActiveItem] = useState<DraggableItemData | null>(null);
+    const [dragNodeOffset, setDragNodeOffset] = useState({ x: 0, y: 0 });
+
+    const canvasWrapperRef = useRef<HTMLDivElement>(null);
+    const transformRef = useRef<ReactZoomPanPinchRef>(null);
+
     const { setNodeRef: coreListRef, isOver: isOverCore } = useDroppable({ id: 'core-list' });
     const { setNodeRef: additionalListRef, isOver: isOverAdditional } = useDroppable({ id: 'additional-list' });
-    const handleDragStart = (event: DragStartEvent) => setActiveValue(event.active.data.current?.value ?? null);
+
+    const handleDragStart = (event: DragStartEvent) => {
+        const { active, activatorEvent } = event;
+        setActiveItem(active.data.current as DraggableItemData);
+
+        if (active.rect.current.initial && 'clientX' in activatorEvent) {
+            const startX = active.rect.current.initial.left;
+            const startY = active.rect.current.initial.top;
+            const cursorX = activatorEvent.clientX;
+            const cursorY = activatorEvent.clientY;
+            setDragNodeOffset({
+                x: cursorX - startX,
+                y: cursorY - startY,
+            });
+        }
+    };
+
     const handleDragEnd = (event: DragEndEvent) => {
-        setActiveValue(null);
-        const { active, over } = event;
-        if (!over || !active.data.current) return;
-        const sourceId = active.id.toString();
-        const destId = over.id.toString();
-        const value = active.data.current.value as Value;
-        if (destId === 'canvas-r3' && sourceId.includes('-')) { const isCore = active.data.current.isCore; const dropPosition = { x: event.delta.x, y: event.delta.y }; dispatch({ type: 'COPY_TO_CANVAS_R3', payload: { value, isCore, position: dropPosition } }); return; }
-        if (sourceId.includes('-') && destId.includes('-')) { const [sourceType, sourceIndexStr] = sourceId.split('-'); const [destType, destIndexStr] = destId.split('-'); if (sourceType !== destType) { dispatch({ type: 'SWAP_VALUES_R3', payload: { from: { list: sourceType as 'core' | 'additional', index: parseInt(sourceIndexStr) }, to: { list: destType as 'core' | 'additional', index: parseInt(destIndexStr) } } }); } }
+        const { active, over, delta } = event;
+        const sourceItem = active.data.current as DraggableItemData;
+
+        if (!sourceItem) {
+            setActiveItem(null);
+            return;
+        }
+
+        if (over) {
+            const sourceType = sourceItem.type;
+            const overId = over.id.toString();
+            
+            let destinationList: 'core' | 'additional' | null = null;
+            if (overId.startsWith('core')) destinationList = 'core';
+            if (overId.startsWith('additional')) destinationList = 'additional';
+
+            if (destinationList) {
+                if (sourceType === 'canvas') {
+                    if (destinationList === 'core' && coreValues.length >= 10 && !coreValues.some(v => v.id === sourceItem.value.id)) {
+                        alert('Only 10 values are allowed in the Core list.');
+                    } else {
+                        dispatch({ type: 'RETURN_TO_BANK_R3', payload: { card: sourceItem.card!, destinationList } });
+                    }
+                } else if (sourceType !== destinationList) {
+                    if (destinationList === 'core' && coreValues.length >= 10) {
+                        alert('Only 10 values are allowed in the Core list.');
+                    } else {
+                        const toIndex = over.data.current?.index ?? (destinationList === 'core' ? coreValues.length : additionalValues.length);
+                        dispatch({ type: 'SWAP_VALUES_R3', payload: { from: { list: sourceType, index: sourceItem.index! }, to: { list: destinationList, index: toIndex } } });
+                    }
+                }
+            }
+        } else {
+            const canvasRect = canvasWrapperRef.current?.getBoundingClientRect();
+            const initialRect = active.rect.current.initial;
+            const transformState = transformRef.current?.instance.transformState;
+
+            if (canvasRect && initialRect && transformState) {
+                const { scale, positionX, positionY } = transformState;
+                const finalX = initialRect.left + delta.x;
+                const finalY = initialRect.top + delta.y;
+
+                if (finalX >= canvasRect.left && finalX <= canvasRect.right && finalY >= canvasRect.top && finalY <= canvasRect.bottom) {
+                    const internalX = (finalX - canvasRect.left - positionX) / scale;
+                    const internalY = (finalY - canvasRect.top - positionY) / scale;
+                    
+                    const position = {
+                        x: internalX - (dragNodeOffset.x / scale),
+                        y: internalY - (dragNodeOffset.y / scale),
+                    };
+
+                    if (sourceItem.type === 'canvas') {
+                        dispatch({ type: 'UPDATE_CANVAS_POSITION_R3', payload: { instanceId: sourceItem.card!.instanceId, position } });
+                    } else if (sourceItem.type === 'core' || sourceItem.type === 'additional') {
+                        dispatch({ type: 'COPY_TO_CANVAS_R3', payload: { value: sourceItem.value, isCore: sourceItem.type === 'core', position } });
+                    }
+                }
+            }
+        }
+
+        setActiveItem(null);
     };
 
     return (
         <PageLayout
-            header={<AppHeader />} // Add the header here
-            footer={ <div style={{ display: 'flex', justifyContent: 'space-between' }}> <Button onClick={() => dispatch({ type: 'GO_BACK_TO_ROUND_2' })}>Back</Button> <Button onClick={() => dispatch({ type: 'ADVANCE_TO_RESULTS' })}>Finish</Button> </div> }>
-            <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
-                <InstructionsPanel title="Round 3: The Value Map"> <p>This is your final canvas. Drag your values from the sidebar to create a visual map of what's important to you. Cards dragged from the sidebar are copies, so you can use a value multiple times.</p> <p>Arrange them, resize them, and group them in a way that makes sense to you. You can also swap values between your 'Core' and 'Additional' lists.</p> </InstructionsPanel>
+            header={<AppHeader />}
+            footer={
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Button onClick={() => dispatch({ type: 'GO_BACK_TO_ROUND_2' })}>Back</Button>
+                    <Button onClick={() => dispatch({ type: 'ADVANCE_TO_RESULTS' })}>Finish</Button>
+                </div>
+            }
+        >
+            <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                <InstructionsPanel title="Round 3: The Value Map">
+                    <p>
+                        This is your final map. Drag copies of your values from the sidebar onto the canvas. Arrange them to
+                        represent their relationships and importance to you. You can also swap values between the lists or drag them back from the canvas.
+                    </p>
+                </InstructionsPanel>
+
                 <Round3Layout>
                     <Sidebar>
-                        <ValueListContainer ref={coreListRef} isOver={isOverCore}> <ListTitle>Core Values</ListTitle> <CardList>{coreValues.map((v, i) => <DraggableSidebarCard key={v.id} value={v} listType="core" index={i} />)}</CardList> </ValueListContainer>
-                        <ValueListContainer ref={additionalListRef} isOver={isOverAdditional}> <ListTitle>Additional Candidates</ListTitle> <CardList>{additionalValues.map((v, i) => <DraggableSidebarCard key={v.id} value={v} listType="additional" index={i} />)}</CardList> </ValueListContainer>
+                        <ValueListContainer>
+                            <ListTitle>Core Values</ListTitle>
+                            <ValueList ref={coreListRef} $isOver={isOverCore}>
+                                {coreValues.map((value, index) => (
+                                    <DraggableBankItem key={value.id} item={value} listType="core" index={index} />
+                                ))}
+                            </ValueList>
+                        </ValueListContainer>
+                        <ValueListContainer>
+                            <ListTitle>Additional Candidates</ListTitle>
+                            <ValueList ref={additionalListRef} $isOver={isOverAdditional}>
+                                {additionalValues.map((value, index) => (
+                                    <DraggableBankItem key={value.id} item={value} listType="additional" index={index} />
+                                ))}
+                            </ValueList>
+                        </ValueListContainer>
                     </Sidebar>
-                    <CanvasArea ref={canvasRef} isOver={isOverCanvas}> {mappedCanvas.map(card => <ResizableDraggableCanvasCard key={card.instanceId} card={card} />)} </CanvasArea>
+
+                    <CanvasWrapper ref={canvasWrapperRef}>
+                        <FreeCanvas ref={transformRef}>
+                            {mappedCanvas.map(card => (
+                                <div key={card.instanceId} style={{ position: 'absolute', top: card.position.y, left: card.position.x, zIndex: card.zIndex }}>
+                                    <DraggableCanvasItem card={card} />
+                                </div>
+                            ))}
+                        </FreeCanvas>
+                    </CanvasWrapper>
                 </Round3Layout>
-                <DragOverlay> {activeValue ? <ValueCard value={activeValue} isDragging={true} /> : null} </DragOverlay>
+
+                <DragOverlay dropAnimation={null}>
+                    {/* FIX: Swapped the colors */}
+                    {activeItem ? <ValueCard value={activeItem.value} isDragging={true} color={activeItem.type === 'core' || (activeItem.type === 'canvas' && activeItem.card.isCore) ? '#FFF3CD' : '#FFFFFF'} /> : null}
+                </DragOverlay>
             </DndContext>
         </PageLayout>
     );

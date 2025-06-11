@@ -1,126 +1,285 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
+import type { FC } from 'react';
 import styled from 'styled-components';
 import { DndContext, DragOverlay, useDraggable, useDroppable, pointerWithin } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
-import type { Value, CanvasCard } from '../types/types';
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useGame } from '../context/GameContext';
+import type { Value, CanvasCard, DraggedItemSourceR2 } from '../types/types';
+
+// Import Components
 import { PageLayout } from '../components/PageLayout';
+import { AppHeader } from '../components/AppHeader';
 import { InstructionsPanel } from '../components/InstructionsPanel';
-import { ValueSlot } from '../components/ValueSlot';
 import { Button } from '../components/Button';
 import { ValueCard } from '../components/ValueCard';
-import { AppHeader } from '../components/AppHeader';
+import { ValueBank } from '../components/ValueBank';
+import { ValueSlot } from '../components/ValueSlot';
+import { FreeCanvas } from '../components/FreeCanvas';
 
-// --- Reusable Components for this Page ---
-const DropZone = styled.div<{ $isOver: boolean }>`
-  width: 300px;
-  height: 100%;
-  background-color: ${({ $isOver }) => ($isOver ? '#E6F7FF' : '#F8F9FA')};
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
+// --- Type Definitions ---
+type DraggableItemData = DraggedItemSourceR2;
+
+// --- Styled Components ---
+const Round2Layout = styled.div`
   display: flex;
   flex-direction: column;
-  transition: background-color 0.2s ease-in-out;
+  gap: 16px;
+  height: 100vh;
+  margin-top: 16px;
+`;
+
+const TopArea = styled.div`
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  flex-grow: 1;
+  min-height: 0;
+`;
+
+const CanvasWrapper = styled.div`
+  flex-grow: 1;
+  position: relative;
+  border-radius: 8px;
+  min-width: 0;
+  border: 1px solid #dee2e6;
+`;
+
+const SlotsSection = styled.div`
+  flex-shrink: 0;
+  border-top: 1px solid #dee2e6;
+  padding-top: 16px;
+`;
+
+const SlotsRow = styled.div`
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 8px;
+`;
+
+const SlotContainer = styled.div<{ $isOver: boolean }>`
+  border: 2px dashed ${({ $isOver }) => ($isOver ? '#007AFF' : 'transparent')};
+  border-radius: 10px;
+  transition: border-color 0.2s ease-in-out;
   flex-shrink: 0;
 `;
-const DropZoneTitle = styled.h3` font-family: 'Inter', sans-serif; font-weight: 600; font-size: 20px; padding: 16px; border-bottom: 1px solid #dee2e6; margin: 0; `;
-const CardList = styled.div` flex-grow: 1; padding: 16px; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 16px; `;
 
-type DraggableItemData = | { type: 'bank'; value: Value } | { type: 'canvas'; card: CanvasCard } | { type: 'slot'; value: Value; slotType: 'topTen' | 'additional'; index: number };
+const DroppableBankContainer = styled.div<{ $isOver: boolean }>`
+  height: 100%;
+  border-radius: 8px;
+  background-color: ${({ $isOver }) => ($isOver ? '#E6F7FF' : 'transparent')};
+  transition: background-color 0.2s ease-in-out;
+`;
 
-const DraggableItem = ({ data, children }: { data: DraggableItemData, children: React.ReactNode }) => {
+// --- Draggable Components ---
+
+const DraggableBankValue: FC<{ value: Value }> = ({ value }) => {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: data.type === 'canvas' ? data.card.instanceId : data.value.id,
-        data,
+        id: `bank-${value.id}`,
+        data: { type: 'bank', value } as DraggableItemData,
     });
-    const style = { opacity: isDragging ? 0 : 1, zIndex: isDragging ? 1001 : 100 };
-    return <div ref={setNodeRef} style={style} {...listeners} {...attributes}>{children}</div>;
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className="dnd-draggable" style={{ opacity: isDragging ? 0.5 : 1 }}>
+            <ValueCard value={value} isDragging={isDragging} />
+        </div>
+    );
 };
 
-// --- Main Layout Components ---
-const Round2Layout = styled.div` display: flex; gap: 24px; height: 55vh; `;
-const MainArea = styled.div<{ $isOver: boolean }>` flex-grow: 1; position: relative; background-color: ${({ $isOver }) => ($isOver ? '#E6F7FF' : '#FFFFFF')}; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden;`;
-const SlotsContainer = styled.div` margin-top: 24px; display: flex; flex-direction: column; gap: 16px; `;
-const SlotRow = styled.div` display: flex; gap: 16px; padding-bottom: 16px; overflow-x: auto; `;
-const SlotRowTitle = styled.h3` margin: 0 0 8px 0; font-weight: 600; `;
+const DraggableCanvasValue: FC<{ card: CanvasCard }> = ({ card }) => {
+    const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
+        id: card.instanceId,
+        data: { type: 'canvas', value: card.value, card } as DraggableItemData,
+    });
+    const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 1000 } : {};
 
-export const Round2 = () => {
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className="dnd-draggable" style={style}>
+            <div style={{ width: card.size.width, height: card.size.height, opacity: isDragging ? 0 : 1 }}>
+                 <ValueCard value={card.value} isDragging={isDragging} />
+            </div>
+        </div>
+    );
+};
+
+const DraggableSlotValue: FC<{ value: Value; slotType: 'topTen' | 'additional'; index: number }> = ({ value, slotType, index }) => {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+        id: `slot-${slotType}-${index}`,
+        data: { type: 'slot', value, slotType, index } as DraggableItemData,
+    });
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className="dnd-draggable" style={{ opacity: isDragging ? 0.5 : 1 }}>
+            <ValueCard value={value} isDragging={isDragging} />
+        </div>
+    );
+};
+
+// --- Droppable Components ---
+
+const DroppableValueSlot: FC<{ slotType: 'topTen' | 'additional'; index: number; value: Value | null }> = ({ slotType, index, value }) => {
+    const droppableId = `${slotType}-${index}`;
+    const { setNodeRef, isOver } = useDroppable({ id: droppableId, disabled: value !== null });
+
+    return (
+        <SlotContainer ref={setNodeRef} $isOver={isOver && !value}>
+            <ValueSlot droppableId={droppableId} value={value} placeholderText={slotType === 'topTen' ? 'Top 10' : 'Candidate'}>
+                {value && <DraggableSlotValue value={value} slotType={slotType} index={index} />}
+            </ValueSlot>
+        </SlotContainer>
+    );
+};
+
+// --- Main Page Component ---
+
+export const Round2: FC = () => {
     const { state, dispatch } = useGame();
     const { bank, canvas, topTenSlots, additionalSlots } = state.round2;
     const [activeItem, setActiveItem] = useState<DraggableItemData | null>(null);
+    const [dragNodeOffset, setDragNodeOffset] = useState({ x: 0, y: 0 });
 
-    const { setNodeRef: canvasRef, isOver: isOverCanvas } = useDroppable({ id: 'canvas-r2' });
-    const { setNodeRef: bankRef, isOver: isOverBank } = useDroppable({ id: 'bank-r2' });
+    const canvasWrapperRef = useRef<HTMLDivElement>(null);
+    const transformRef = useRef<ReactZoomPanPinchRef>(null);
+    const { setNodeRef: bankRef, isOver: isOverBank } = useDroppable({ id: 'bank' });
 
     const handleDragStart = (event: DragStartEvent) => {
-        setActiveItem(event.active.data.current as DraggableItemData);
-    };
-    
-    const handleDragEnd = (event: DragEndEvent) => {
-        setActiveItem(null);
-        const { active, over } = event;
-        if (!over || !active.data.current) return;
+        const { active, activatorEvent } = event;
+        setActiveItem(active.data.current as DraggableItemData);
 
-        const item = active.data.current as DraggableItemData;
-        const overId = over.id.toString();
-
-        // FIX: This is the complete, robust logic for all drop targets.
-        if (overId === 'canvas-r2') {
-            const position = { x: event.delta.x + (active.rect.current.initial?.left ?? 0), y: event.delta.y + (active.rect.current.initial?.top ?? 0) };
-            if (item.type === 'canvas') {
-                // If dragging from the canvas to the canvas, just update position
-                dispatch({ type: 'UPDATE_CANVAS_POSITION_R2', payload: { instanceId: item.card.instanceId, position } });
-            } else {
-                // If dragging from bank or slot to canvas, place it
-                dispatch({ type: 'PLACE_ON_CANVAS_R2', payload: { item, position } });
-            }
-        } else if (overId === 'bank-r2') {
-            // If dropping on the bank, dispatch the return action
-            dispatch({ type: 'RETURN_TO_BANK_R2', payload: { item } });
-        } else if (overId.startsWith('slot-')) {
-            // If dropping on a slot, handle placement
-            const [, slotType, indexStr] = overId.split('-');
-            const index = parseInt(indexStr);
-            const targetSlotArray = slotType === 'topTen' ? topTenSlots : additionalSlots;
-            if (targetSlotArray[index] !== null) return; // Prevent dropping on a filled slot
-
-            dispatch({ type: 'PLACE_IN_SLOT_R2', payload: { item, slotType: slotType as 'topTen' | 'additional', index } });
+        if (active.rect.current.initial && 'clientX' in activatorEvent) {
+            const startX = active.rect.current.initial.left;
+            const startY = active.rect.current.initial.top;
+            const cursorX = activatorEvent.clientX;
+            const cursorY = activatorEvent.clientY;
+            setDragNodeOffset({
+                x: cursorX - startX,
+                y: cursorY - startY,
+            });
         }
     };
-    
-    const isNextDisabled = useMemo(() => topTenSlots.some(slot => slot === null), [topTenSlots]);
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over, delta } = event;
+        const sourceItem = active.data.current as DraggableItemData;
+
+        if (!sourceItem) {
+            setActiveItem(null);
+            return;
+        }
+
+        if (over) {
+            const destinationId = over.id.toString();
+            if (destinationId.startsWith('topTen-') || destinationId.startsWith('additional-')) {
+                const [slotType, indexStr] = destinationId.split('-');
+                const index = parseInt(indexStr, 10);
+                dispatch({
+                    type: 'PLACE_IN_SLOT_R2',
+                    payload: { item: sourceItem, slotType: slotType as 'topTen' | 'additional', index },
+                });
+            } else if (destinationId === 'bank') {
+                if (sourceItem.type !== 'bank') {
+                    dispatch({ type: 'RETURN_TO_BANK_R2', payload: { item: sourceItem } });
+                }
+            }
+        } else {
+            const canvasRect = canvasWrapperRef.current?.getBoundingClientRect();
+            const initialRect = active.rect.current.initial;
+            const transformState = transformRef.current?.instance.transformState;
+
+            if (canvasRect && initialRect && transformState) {
+                const { scale, positionX, positionY } = transformState;
+                const finalX = initialRect.left + delta.x;
+                const finalY = initialRect.top + delta.y;
+
+                if (
+                    finalX >= canvasRect.left &&
+                    finalX <= canvasRect.right &&
+                    finalY >= canvasRect.top &&
+                    finalY <= canvasRect.bottom
+                ) {
+                    const internalX = (finalX - canvasRect.left - positionX) / scale;
+                    const internalY = (finalY - canvasRect.top - positionY) / scale;
+                    
+                    const position = {
+                        x: internalX - (dragNodeOffset.x / scale),
+                        y: internalY - (dragNodeOffset.y / scale),
+                    };
+                    
+                    dispatch({ type: 'PLACE_ON_CANVAS_R2', payload: { item: sourceItem, position } });
+                } else {
+                    if (sourceItem.type !== 'bank') {
+                        dispatch({ type: 'RETURN_TO_BANK_R2', payload: { item: sourceItem } });
+                    }
+                }
+            } else {
+                if (sourceItem.type !== 'bank') {
+                    dispatch({ type: 'RETURN_TO_BANK_R2', payload: { item: sourceItem } });
+                }
+            }
+        }
+
+        setActiveItem(null);
+    };
+
+    const isNextDisabled = useMemo(() => topTenSlots.includes(null), [topTenSlots]);
 
     return (
-        <PageLayout header={<AppHeader />} footer={ <div style={{ display: 'flex', justifyContent: 'space-between' }}> <Button onClick={() => dispatch({ type: 'GO_BACK_TO_ROUND_1' })}>Back</Button> <Button onClick={() => dispatch({ type: 'ADVANCE_TO_ROUND_3' })} disabled={isNextDisabled}>Next Round</Button> </div> }>
+        <PageLayout
+            header={<AppHeader />}
+            footer={
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Button onClick={() => dispatch({ type: 'GO_BACK_TO_ROUND_1' })}>Back</Button>
+                    <Button onClick={() => dispatch({ type: 'ADVANCE_TO_ROUND_3' })} disabled={isNextDisabled}>
+                        Next Round
+                    </Button>
+                </div>
+            }
+        >
             <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
-                <InstructionsPanel title="Round 2: Winnowing to Core Values"> <p>From your "Matters Most" list, drag values to the "Top Ten Values" slots. Use the canvas area as a temporary space to compare and contrast values before making your final choices.</p> </InstructionsPanel>
+                <InstructionsPanel title="Round 2: Winnowing to Core Values">
+                    <p>
+                        Drag your most important values into the "Top 10" slots. Use the canvas to freely arrange and compare values.
+                        You can also place some in the "Candidates" row. You must fill all "Top 10" slots to proceed.
+                    </p>
+                </InstructionsPanel>
+
                 <Round2Layout>
-                    <DropZone ref={bankRef} $isOver={isOverBank}>
-                        <DropZoneTitle>Value Bank</DropZoneTitle>
-                        <CardList>
-                            {bank.map(value => (
-                                <DraggableItem key={value.id} data={{ type: 'bank', value }}>
-                                    <ValueCard value={value} />
-                                </DraggableItem>
+                    <TopArea>
+                        <DroppableBankContainer ref={bankRef} $isOver={isOverBank}>
+                            <ValueBank title="Value Bank" droppableId="bank" values={bank}>
+                                {bank.map(value => (
+                                    <DraggableBankValue key={value.id} value={value} />
+                                ))}
+                            </ValueBank>
+                        </DroppableBankContainer>
+
+                        <CanvasWrapper ref={canvasWrapperRef}>
+                            <FreeCanvas ref={transformRef}>
+                                {canvas.map(card => (
+                                    // FIX: Apply the zIndex from the state to the wrapper div
+                                    <div key={card.instanceId} style={{ position: 'absolute', top: card.position.y, left: card.position.x, zIndex: card.zIndex }}>
+                                        <DraggableCanvasValue card={card} />
+                                    </div>
+                                ))}
+                            </FreeCanvas>
+                        </CanvasWrapper>
+                    </TopArea>
+
+                    <SlotsSection>
+                        <SlotsRow>
+                            {topTenSlots.map((value, index) => (
+                                <DroppableValueSlot key={`topTen-${index}`} slotType="topTen" index={index} value={value} />
                             ))}
-                        </CardList>
-                    </DropZone>
-                    <MainArea ref={canvasRef} $isOver={isOverCanvas}>
-                        {canvas.map(card => (
-                            <DraggableItem key={card.instanceId} data={{ type: 'canvas', card }}>
-                                <div style={{ position: 'absolute', left: card.position.x, top: card.position.y }}>
-                                    <ValueCard value={card.value} />
-                                </div>
-                            </DraggableItem>
-                        ))}
-                    </MainArea>
+                        </SlotsRow>
+                        <SlotsRow style={{ marginTop: '16px' }}>
+                            {additionalSlots.map((value, index) => (
+                                <DroppableValueSlot key={`additional-${index}`} slotType="additional" index={index} value={value} />
+                            ))}
+                        </SlotsRow>
+                    </SlotsSection>
                 </Round2Layout>
-                <SlotsContainer>
-                    <div> <SlotRowTitle>Top Ten Values</SlotRowTitle> <SlotRow> {topTenSlots.map((value, index) => ( <ValueSlot key={`top-${index}`} value={null} droppableId={`slot-topTen-${index}`} placeholderText={`Core ${index + 1}`}> {value && <DraggableItem data={{ type: 'slot', value, slotType: 'topTen', index }}><ValueCard value={value} /></DraggableItem>} </ValueSlot> ))} </SlotRow> </div>
-                    <div> <SlotRowTitle>Additional Candidates</SlotRowTitle> <SlotRow> {additionalSlots.map((value, index) => ( <ValueSlot key={`add-${index}`} value={null} droppableId={`slot-additional-${index}`} placeholderText="Candidate"> {value && <DraggableItem data={{ type: 'slot', value, slotType: 'additional', index }}><ValueCard value={value} /></DraggableItem>} </ValueSlot> ))} </SlotRow> </div>
-                </SlotsContainer>
+
                 <DragOverlay dropAnimation={null}>
-                    {activeItem ? <ValueCard value={activeItem.type === 'canvas' ? activeItem.card.value : activeItem.value} isDragging={true} /> : null}
+                    {activeItem ? <ValueCard value={activeItem.value} isDragging={true} /> : null}
                 </DragOverlay>
             </DndContext>
         </PageLayout>

@@ -3,11 +3,13 @@ import { useDroppable } from '@dnd-kit/core';
 import type { Value } from '../types/types';
 import { ValueCard } from './ValueCard';
 
+// Add the 'data' prop to the interface
 interface ValueSlotProps {
   value: Value | null;
   droppableId: string;
   placeholderText: string;
   children?: React.ReactNode;
+  data?: Record<string, unknown>; 
 }
 
 const SlotContainer = styled.div<{ $isOver: boolean; $isEmpty: boolean }>`
@@ -23,7 +25,7 @@ const SlotContainer = styled.div<{ $isOver: boolean; $isEmpty: boolean }>`
   border-style: ${({ $isOver, $isEmpty }) => ($isOver && $isEmpty) ? 'dashed' : 'solid'};
   transition: border-color 0.2s ease-in-out, border-style 0.2s ease-in-out;
   flex-shrink: 0;
-  padding: 10px; /* Add padding */
+  padding: 10px;
 `;
 
 const PlaceholderText = styled.p`
@@ -35,16 +37,15 @@ const PlaceholderText = styled.p`
   padding: 8px;
 `;
 
-// FIX: This wrapper will scale the card down to fit inside the slot
 const SlottedCardWrapper = styled.div`
   transform: scale(0.85);
   transform-origin: center center;
-  transition: transform 0.1s ease-in-out;
 `;
 
-export const ValueSlot: React.FC<ValueSlotProps> = ({ value, droppableId, placeholderText, children }) => {
+export const ValueSlot: React.FC<ValueSlotProps> = ({ value, droppableId, placeholderText, children, data }) => {
   const { isOver, setNodeRef } = useDroppable({
     id: droppableId,
+    data, // Pass the data to the hook
   });
 
   return (
