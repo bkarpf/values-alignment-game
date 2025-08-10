@@ -51,4 +51,5 @@ export const ALL_VALUES: Value[] = [
   { id: 'value-security', name: 'Security', definition: 'To feel safe, stable, and free from danger or threat.' },
   { id: 'value-spirituality', name: 'Spirituality', definition: 'To have a connection to something larger than yourself.' },
   { id: 'value-wealth', name: 'Wealth', definition: 'To have an abundance of valuable possessions or money.' },
+  { id: 'value-responsibility', name: 'Responsibility', definition: 'To be dependable and hold yourself and others accountable for decisions and choices.' },
 ];
